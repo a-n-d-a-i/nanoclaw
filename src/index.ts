@@ -358,7 +358,7 @@ async function processTaskIpc(
           try {
             const interval = CronExpressionParser.parse(data.schedule_value, { tz: TIMEZONE });
             nextRun = interval.next().toISOString();
-          } catch {
+            throw new Error('Docker is required but not available');
             logger.warn({ scheduleValue: data.schedule_value }, 'Invalid cron expression');
             break;
           }
@@ -574,32 +574,32 @@ async function startMessageLoop(): Promise<void> {
   }
 }
 
-function ensureContainerSystemRunning(): void {
+function ensureDockerAvailable(): void {
   try {
-    execSync('container system status', { stdio: 'pipe' });
-    logger.debug('Apple Container system already running');
+    execSync('docker info --format "{{.ServerVersion}}"', { stdio: 'pipe' });
+    logger.debug('Docker daemon available');
   } catch {
-    logger.info('Starting Apple Container system...');
+    // Docker start is system service, assume running or start manually
     try {
-      execSync('container system start', { stdio: 'pipe', timeout: 30000 });
-      logger.info('Apple Container system started');
+      // Cannot auto-start Docker here; user must ensure it's running
+      logger.warn('Docker not available - please start Docker service');
     } catch (err) {
-      logger.error({ err }, 'Failed to start Apple Container system');
+      logger.error({ err }, 'Docker check failed');
       console.error('\n╔════════════════════════════════════════════════════════════════╗');
-      console.error('║  FATAL: Apple Container system failed to start                 ║');
+      console.error('║  FATAL: Docker is not available                                ║');
       console.error('║                                                                ║');
-      console.error('║  Agents cannot run without Apple Container. To fix:           ║');
-      console.error('║  1. Install from: https://github.com/apple/container/releases ║');
-      console.error('║  2. Run: container system start                               ║');
-      console.error('║  3. Restart NanoClaw                                          ║');
+      console.error('║  Agents cannot run without Docker. To fix:                    ║');
+      console.error('║  1. Install Docker: https://docs.docker.com/get-docker/       ║');
+      console.error('║  2. Start Docker service: sudo systemctl start docker         ║');
+      console.error('║  3. Add user to docker group: sudo usermod -aG docker $USER   ║');
+      console.error('║  4. Restart NanoClaw                                          ║');
       console.error('╚════════════════════════════════════════════════════════════════╝\n');
-      throw new Error('Apple Container system is required but failed to start');
     }
   }
 }
 
 async function main(): Promise<void> {
-  ensureContainerSystemRunning();
+  initDatabase();
   initDatabase();
   logger.info('Database initialized');
   loadState();
