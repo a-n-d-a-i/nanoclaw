@@ -76,7 +76,7 @@ export AGENT_TIMEOUT=600000  # 10 minutes
 Or set per-group in `data/registered_groups.json`:
 ```json
 {
-  "containerConfig": {
+  "agentConfig": {
     "timeout": 600000
   }
 }

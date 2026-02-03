@@ -19,7 +19,7 @@ process.stdin.on('end', async () => {
     const input = JSON.parse(inputData);
     const { prompt, sessionId, groupFolder, chatJid, isMain, isScheduledTask } = input;
 
-    // Set cwd to group folder for isolation
+    // Set cwd to group folder
     const groupDir = path.resolve(process.cwd(), '..', 'groups', groupFolder); // Adjust path as needed
     process.chdir(groupDir);
 

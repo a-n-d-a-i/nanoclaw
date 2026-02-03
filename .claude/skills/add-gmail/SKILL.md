@@ -5,6 +5,10 @@ description: Add Gmail integration to NanoClaw. Can be configured as a tool (age
 
 # Add Gmail Integration
 
+> **Note:** This skill was written for the Docker/container version and needs updating for the no-docker branch. The GCP OAuth setup still applies, but the container-specific mounting and MCP server configuration will need to be adapted to work with direct process execution.
+
+
+
 This skill adds Gmail capabilities to NanoClaw. It can be configured in two modes:
 
 1. **Tool Mode** - Agent can read/send emails, but only when triggered from WhatsApp

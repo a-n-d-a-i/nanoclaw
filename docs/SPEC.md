@@ -102,7 +102,7 @@ nanoclaw/
 │       ├── customize/
 │       │   └── SKILL.md           # /customize skill
 │       └── debug/
-│           └── SKILL.md           # /debug skill (container debugging)
+│           └── SKILL.md           # /debug skill
 │
 ├── groups/
 │   ├── CLAUDE.md                  # Global memory (all groups read this)
@@ -122,13 +122,12 @@ nanoclaw/
 │   ├── sessions.json              # Active session IDs per group
 │   ├── registered_groups.json     # Group JID → folder mapping
 │   ├── router_state.json          # Last processed timestamp + last agent timestamps
-│   ├── env/env                    # Copy of .env for container mounting
-│   └── ipc/                       # Container IPC (messages/, tasks/)
+│   └── ipc/                       # Agent IPC (messages/, tasks/)
 │
 ├── logs/                          # Runtime logs (gitignored)
 │   ├── nanoclaw.log               # Host stdout
 │   └── nanoclaw.error.log         # Host stderr
-│   # Note: Per-container logs are in groups/{folder}/logs/container-*.log
+│   # Note: Per-agent logs are in groups/{folder}/logs/agent-*.log
 │
 └── launchd/
     └── com.nanoclaw.plist         # macOS service configuration

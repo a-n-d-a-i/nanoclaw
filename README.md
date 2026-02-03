@@ -8,9 +8,9 @@
 
 ## Why I Built This
 
-[OpenClaw](https://github.com/openclaw/openclaw) is an impressive project with a great vision. But I can't sleep well running software I don't understand with access to my life. OpenClaw has 52+ modules, 8 config management files, 45+ dependencies, and abstractions for 15 channel providers. Security is application-level (allowlists, pairing codes) rather than OS isolation. Everything runs in one Node process with shared memory.
+[OpenClaw](https://github.com/openclaw/openclaw) is an impressive project with a great vision. But I can't sleep well running software I don't understand with access to my life. OpenClaw has 52+ modules, 8 config management files, 45+ dependencies, and abstractions for 15 channel providers. Everything runs in one Node process with shared memory.
 
-NanoClaw gives you the same core functionality in a codebase you can understand in 8 minutes. One process. A handful of files. Simple process-based isolation.
+NanoClaw gives you the same core functionality in a codebase you can understand in 8 minutes. One process. A handful of files. No complexity.
 
 ## Quick Start
 
@@ -26,7 +26,7 @@ Then run `/setup`. Claude Code handles everything: dependencies, authentication,
 
 **Small enough to understand.** One process, a few source files. No microservices, no message queues, no abstraction layers. Have Claude Code walk you through it.
 
-**Secure by isolation.** Each agent runs in its own process with working directory set to its group folder. Simple filesystem-based isolation.
+**Simple and transparent.** Each agent runs as a child process. No sandboxing, no complexity. Review what you're running.
 
 **Built for one user.** This isn't a framework. It's working software that fits my exact needs. You fork it and have Claude Code make it match your exact needs.
 

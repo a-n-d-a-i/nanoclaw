@@ -322,7 +322,7 @@ async function processTaskIpc(
     name?: string;
     folder?: string;
     trigger?: string;
-    containerConfig?: RegisteredGroup['containerConfig'];
+    agentConfig?: RegisteredGroup['agentConfig'];
   },
   sourceGroup: string,  // Verified identity from IPC directory
   isMain: boolean       // Verified from directory path
@@ -460,7 +460,7 @@ async function processTaskIpc(
           folder: data.folder,
           trigger: data.trigger,
           added_at: new Date().toISOString(),
-          containerConfig: data.containerConfig
+          agentConfig: data.agentConfig
         });
       } else {
         logger.warn({ data }, 'Invalid register_group request - missing required fields');

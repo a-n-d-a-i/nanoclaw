@@ -1,11 +1,10 @@
 /**
  * Agent Runner for NanoClaw
- * Spawns agent execution as a child process and handles IPC
+ * Spawns agent as child process
  */
 
 import { spawn } from 'child_process';
 import fs from 'fs';
-import os from 'os';
 import path from 'path';
 import pino from 'pino';
 import {
@@ -15,24 +14,15 @@ import {
   DATA_DIR
 } from './config.js';
 import { RegisteredGroup } from './types.js';
-import { validateAdditionalMounts } from './mount-security.js';
 
 const logger = pino({
   level: process.env.LOG_LEVEL || 'info',
   transport: { target: 'pino-pretty', options: { colorize: true } }
 });
 
-// Sentinel markers for robust output parsing (must match agent.ts)
+// Sentinel markers for output parsing (must match agent.ts)
 const OUTPUT_START_MARKER = '---NANOCLAW_OUTPUT_START---';
 const OUTPUT_END_MARKER = '---NANOCLAW_OUTPUT_END---';
-
-function getHomeDir(): string {
-  const home = process.env.HOME || os.homedir();
-  if (!home) {
-    throw new Error('Unable to determine home directory: HOME environment variable is not set and os.homedir() returned empty');
-  }
-  return home;
-}
 
 export interface AgentInput {
   prompt: string;
@@ -54,16 +44,14 @@ const allowedVars = ['ANTHROPIC_API_KEY', 'CLAUDE_CODE_OAUTH_TOKEN'];
 
 function buildEnv(group: RegisteredGroup, isMain: boolean): NodeJS.ProcessEnv {
   const env = { ...process.env };
-  const projectRoot = process.cwd();
 
-  // Filter env for security - only allow specific vars
+  // Only pass through API credentials and Node vars
   for (const key in env) {
     if (!allowedVars.includes(key) && !key.startsWith('NODE_') && !key.startsWith('npm_')) {
       delete env[key];
     }
   }
 
-  // Add group-specific env
   env.GROUP_FOLDER = group.folder;
   env.IS_MAIN = isMain.toString();
 
@@ -94,7 +82,7 @@ export async function runAgent(
   const logsDir = path.join(GROUPS_DIR, group.folder, 'logs');
   fs.mkdirSync(logsDir, { recursive: true });
 
-  // Change to group dir for isolation
+  // Set working directory to group folder
   const originalCwd = process.cwd();
   process.chdir(groupDir);
 
@@ -154,7 +142,7 @@ export async function runAgent(
         result: null,
         error: `Agent timed out after ${AGENT_TIMEOUT}ms`
       });
-    }, group.containerConfig?.timeout || AGENT_TIMEOUT);
+    }, group.agentConfig?.timeout || AGENT_TIMEOUT);
 
     agent.on('close', (code) => {
       clearTimeout(timeout);
