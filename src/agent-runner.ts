@@ -26,7 +26,6 @@ const OUTPUT_END_MARKER = '---NANOCLAW_OUTPUT_END---';
 
 export interface AgentInput {
   prompt: string;
-  sessionId?: string;
   groupFolder: string;
   chatJid: string;
   isScheduledTask?: boolean;
@@ -35,7 +34,6 @@ export interface AgentInput {
 export interface AgentOutput {
   status: 'success' | 'error';
   result: string | null;
-  newSessionId?: string;
   error?: string;
 }
 
@@ -177,7 +175,6 @@ export async function runAgent(
         logLines.push(
           `=== Input Summary ===`,
           `Prompt length: ${input.prompt.length} chars`,
-          `Session ID: ${input.sessionId || 'new'}`,
           ``
         );
 

@@ -16,7 +16,7 @@ process.stdin.on('data', (chunk) => {
 process.stdin.on('end', async () => {
   try {
     const input = JSON.parse(inputData);
-    const { prompt, sessionId, groupFolder } = input;
+    const { prompt, groupFolder } = input;
 
     // Set cwd to group folder
     const groupDir = path.resolve(process.cwd(), '..', 'groups', groupFolder);
@@ -36,7 +36,6 @@ process.stdin.on('end', async () => {
     const output = {
       status: 'success',
       result,
-      newSessionId: sessionId || Date.now().toString(),
     };
 
     // Output with markers

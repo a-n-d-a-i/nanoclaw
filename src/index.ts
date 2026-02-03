@@ -19,7 +19,7 @@ import {
   IPC_POLL_INTERVAL,
   TIMEZONE
 } from './config.js';
-import { RegisteredGroup, Session, NewMessage } from './types.js';
+import { RegisteredGroup, NewMessage } from './types.js';
 import { initDatabase, storeMessage, storeChatMetadata, getNewMessages, getMessagesSince, getAllTasks, updateChatName, getAllChats, getLastGroupSync, setLastGroupSync } from './db.js';
 import { startSchedulerLoop } from './task-scheduler.js';
 import { runAgent, writeTasksSnapshot, writeGroupsSnapshot, AvailableGroup } from './agent-runner.js';
@@ -34,7 +34,6 @@ const logger = pino({
 
 let sock: WASocket;
 let lastTimestamp = '';
-let sessions: Session = {};
 let registeredGroups: Record<string, RegisteredGroup> = {};
 let lastAgentTimestamp: Record<string, string> = {};
 
@@ -51,14 +50,12 @@ function loadState(): void {
   const state = loadJson<{ last_timestamp?: string; last_agent_timestamp?: Record<string, string> }>(statePath, {});
   lastTimestamp = state.last_timestamp || '';
   lastAgentTimestamp = state.last_agent_timestamp || {};
-  sessions = loadJson(path.join(DATA_DIR, 'sessions.json'), {});
   registeredGroups = loadJson(path.join(DATA_DIR, 'registered_groups.json'), {});
   logger.info({ groupCount: Object.keys(registeredGroups).length }, 'State loaded');
 }
 
 function saveState(): void {
   saveJson(path.join(DATA_DIR, 'router_state.json'), { last_timestamp: lastTimestamp, last_agent_timestamp: lastAgentTimestamp });
-  saveJson(path.join(DATA_DIR, 'sessions.json'), sessions);
 }
 
 function registerGroup(jid: string, group: RegisteredGroup): void {
@@ -164,8 +161,6 @@ async function processMessage(msg: NewMessage): Promise<void> {
 }
 
 async function invokeAgent(group: RegisteredGroup, prompt: string, chatJid: string): Promise<string | null> {
-  const sessionId = sessions[group.folder];
-
   // Write snapshots for agent to read
   const tasks = getAllTasks();
   writeTasksSnapshot(group.folder, tasks.map(t => ({
@@ -184,15 +179,9 @@ async function invokeAgent(group: RegisteredGroup, prompt: string, chatJid: stri
   try {
     const output = await runAgent(group, {
       prompt,
-      sessionId,
       groupFolder: group.folder,
       chatJid
     });
-
-    if (output.newSessionId) {
-      sessions[group.folder] = output.newSessionId;
-      saveJson(path.join(DATA_DIR, 'sessions.json'), sessions);
-    }
 
     if (output.status === 'error') {
       logger.error({ group: group.name, error: output.error }, 'Agent error');
@@ -469,8 +458,7 @@ async function connectWhatsApp(): Promise<void> {
       }, GROUP_SYNC_INTERVAL_MS);
       startSchedulerLoop({
         sendMessage,
-        registeredGroups: () => registeredGroups,
-        getSessions: () => sessions
+        registeredGroups: () => registeredGroups
       });
       startIpcWatcher();
       startMessageLoop();

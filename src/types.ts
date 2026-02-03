@@ -10,10 +10,6 @@ export interface RegisteredGroup {
   agentConfig?: AgentConfig;
 }
 
-export interface Session {
-  [folder: string]: string;
-}
-
 export interface NewMessage {
   id: string;
   chat_jid: string;

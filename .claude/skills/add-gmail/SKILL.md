@@ -569,17 +569,11 @@ async function runEmailAgent(
   // Use existing runAgent
   const output = await runAgent(emailGroup, {
     prompt,
-    sessionId: sessions[groupFolder],
     groupFolder,
     chatJid: `email:${email.from}`,  // Use email: prefix for JID
     isMain: false,
     isScheduledTask: false
   });
-
-  if (output.newSessionId) {
-    sessions[groupFolder] = output.newSessionId;
-    saveJson(path.join(DATA_DIR, 'sessions.json'), sessions);
-  }
 
   return output.status === 'success' ? output.result : null;
 }
