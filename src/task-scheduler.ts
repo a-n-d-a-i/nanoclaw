@@ -5,7 +5,7 @@ import { CronExpressionParser } from 'cron-parser';
 import { getDueTasks, updateTaskAfterRun, logTaskRun, getTaskById, getAllTasks } from './db.js';
 import { ScheduledTask, RegisteredGroup } from './types.js';
 import { GROUPS_DIR, SCHEDULER_POLL_INTERVAL, DATA_DIR, MAIN_GROUP_FOLDER, TIMEZONE } from './config.js';
-import { runContainerAgent, writeTasksSnapshot } from './container-runner.js';
+import { runAgent, writeTasksSnapshot } from './agent-runner.js';
 
 const logger = pino({
   level: process.env.LOG_LEVEL || 'info',
@@ -41,7 +41,7 @@ async function runTask(task: ScheduledTask, deps: SchedulerDependencies): Promis
     return;
   }
 
-  // Update tasks snapshot for container to read (filtered by group)
+  // Update tasks snapshot for agent to read (filtered by group)
   const isMain = task.group_folder === MAIN_GROUP_FOLDER;
   const tasks = getAllTasks();
   writeTasksSnapshot(task.group_folder, isMain, tasks.map(t => ({
@@ -62,7 +62,7 @@ async function runTask(task: ScheduledTask, deps: SchedulerDependencies): Promis
   const sessionId = task.context_mode === 'group' ? sessions[task.group_folder] : undefined;
 
   try {
-    const output = await runContainerAgent(group, {
+    const output = await runAgent(group, {
       prompt: task.prompt,
       sessionId,
       groupFolder: task.group_folder,

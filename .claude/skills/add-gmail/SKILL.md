@@ -193,7 +193,7 @@ allowedTools: [
 
 ### Step 2: Mount Gmail Credentials in Container
 
-Read `src/container-runner.ts` and find the `buildVolumeMounts` function.
+Read `src/agent-runner.ts` and find the `buildEnv` function.
 
 Add this mount block (after the `.claude` mount is a good location):
 
@@ -562,8 +562,8 @@ async function runEmailAgent(
     added_at: new Date().toISOString()
   };
 
-  // Use existing runContainerAgent
-  const output = await runContainerAgent(emailGroup, {
+  // Use existing runAgent
+  const output = await runAgent(emailGroup, {
     prompt,
     sessionId: sessions[groupFolder],
     groupFolder,
@@ -706,8 +706,8 @@ To remove Gmail entirely:
    - Delete `gmail` from `mcpServers`
    - Remove `mcp__gmail__*` from `allowedTools`
 
-2. Remove from `src/container-runner.ts`:
-   - Delete the `~/.gmail-mcp` mount block
+2. Remove from `src/agent-runner.ts`:
+   - Delete any Gmail-related environment setup
 
 3. Remove from `src/index.ts` (Channel Mode only):
    - Delete `startEmailLoop()` call

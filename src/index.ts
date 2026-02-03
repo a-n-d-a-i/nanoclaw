@@ -5,7 +5,7 @@ import makeWASocket, {
   WASocket
 } from '@whiskeysockets/baileys';
 import pino from 'pino';
-import { exec, execSync } from 'child_process';
+import { exec } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 
@@ -22,7 +22,7 @@ import {
 import { RegisteredGroup, Session, NewMessage } from './types.js';
 import { initDatabase, storeMessage, storeChatMetadata, getNewMessages, getMessagesSince, getAllTasks, getTaskById, updateChatName, getAllChats, getLastGroupSync, setLastGroupSync } from './db.js';
 import { startSchedulerLoop } from './task-scheduler.js';
-import { runContainerAgent, writeTasksSnapshot, writeGroupsSnapshot, AvailableGroup } from './container-runner.js';
+import { runAgent, writeTasksSnapshot, writeGroupsSnapshot, AvailableGroup } from './agent-runner.js';
 import { loadJson, saveJson } from './utils.js';
 
 const GROUP_SYNC_INTERVAL_MS = 24 * 60 * 60 * 1000; // 24 hours
@@ -158,7 +158,7 @@ async function processMessage(msg: NewMessage): Promise<void> {
   logger.info({ group: group.name, messageCount: missedMessages.length }, 'Processing message');
 
   await setTyping(msg.chat_jid, true);
-  const response = await runAgent(group, prompt, msg.chat_jid);
+  const response = await invokeAgent(group, prompt, msg.chat_jid);
   await setTyping(msg.chat_jid, false);
 
   if (response) {
@@ -167,11 +167,11 @@ async function processMessage(msg: NewMessage): Promise<void> {
   }
 }
 
-async function runAgent(group: RegisteredGroup, prompt: string, chatJid: string): Promise<string | null> {
+async function invokeAgent(group: RegisteredGroup, prompt: string, chatJid: string): Promise<string | null> {
   const isMain = group.folder === MAIN_GROUP_FOLDER;
   const sessionId = sessions[group.folder];
 
-  // Update tasks snapshot for container to read (filtered by group)
+  // Update tasks snapshot for agent to read (filtered by group)
   const tasks = getAllTasks();
   writeTasksSnapshot(group.folder, isMain, tasks.map(t => ({
     id: t.id,
@@ -188,7 +188,7 @@ async function runAgent(group: RegisteredGroup, prompt: string, chatJid: string)
   writeGroupsSnapshot(group.folder, isMain, availableGroups, new Set(Object.keys(registeredGroups)));
 
   try {
-    const output = await runContainerAgent(group, {
+    const output = await runAgent(group, {
       prompt,
       sessionId,
       groupFolder: group.folder,
@@ -202,7 +202,7 @@ async function runAgent(group: RegisteredGroup, prompt: string, chatJid: string)
     }
 
     if (output.status === 'error') {
-      logger.error({ group: group.name, error: output.error }, 'Container agent error');
+      logger.error({ group: group.name, error: output.error }, 'Agent error');
       return null;
     }
 
@@ -358,7 +358,7 @@ async function processTaskIpc(
           try {
             const interval = CronExpressionParser.parse(data.schedule_value, { tz: TIMEZONE });
             nextRun = interval.next().toISOString();
-            throw new Error('Docker is required but not available');
+          } catch {
             logger.warn({ scheduleValue: data.schedule_value }, 'Invalid cron expression');
             break;
           }
@@ -441,7 +441,7 @@ async function processTaskIpc(
         await syncGroupMetadata(true);
         // Write updated snapshot immediately
         const availableGroups = getAvailableGroups();
-        const { writeGroupsSnapshot: writeGroups } = await import('./container-runner.js');
+        const { writeGroupsSnapshot: writeGroups } = await import('./agent-runner.js');
         writeGroups(sourceGroup, true, availableGroups, new Set(Object.keys(registeredGroups)));
       } else {
         logger.warn({ sourceGroup }, 'Unauthorized refresh_groups attempt blocked');
@@ -574,32 +574,7 @@ async function startMessageLoop(): Promise<void> {
   }
 }
 
-function ensureDockerAvailable(): void {
-  try {
-    execSync('docker info --format "{{.ServerVersion}}"', { stdio: 'pipe' });
-    logger.debug('Docker daemon available');
-  } catch {
-    // Docker start is system service, assume running or start manually
-    try {
-      // Cannot auto-start Docker here; user must ensure it's running
-      logger.warn('Docker not available - please start Docker service');
-    } catch (err) {
-      logger.error({ err }, 'Docker check failed');
-      console.error('\n╔════════════════════════════════════════════════════════════════╗');
-      console.error('║  FATAL: Docker is not available                                ║');
-      console.error('║                                                                ║');
-      console.error('║  Agents cannot run without Docker. To fix:                    ║');
-      console.error('║  1. Install Docker: https://docs.docker.com/get-docker/       ║');
-      console.error('║  2. Start Docker service: sudo systemctl start docker         ║');
-      console.error('║  3. Add user to docker group: sudo usermod -aG docker $USER   ║');
-      console.error('║  4. Restart NanoClaw                                          ║');
-      console.error('╚════════════════════════════════════════════════════════════════╝\n');
-    }
-  }
-}
-
 async function main(): Promise<void> {
-  initDatabase();
   initDatabase();
   logger.info('Database initialized');
   loadState();

@@ -3,14 +3,14 @@
 </p>
 
 <p align="center">
-  My personal Claude assistant that runs securely in Apple containers. Lightweight and built to be understood and customized for your own needs.
+  My personal Claude assistant. Lightweight and built to be understood and customized for your own needs.
 </p>
 
 ## Why I Built This
 
 [OpenClaw](https://github.com/openclaw/openclaw) is an impressive project with a great vision. But I can't sleep well running software I don't understand with access to my life. OpenClaw has 52+ modules, 8 config management files, 45+ dependencies, and abstractions for 15 channel providers. Security is application-level (allowlists, pairing codes) rather than OS isolation. Everything runs in one Node process with shared memory.
 
-NanoClaw gives you the same core functionality in a codebase you can understand in 8 minutes. One process. A handful of files. Agents run in actual Linux containers with filesystem isolation, not behind permission checks.
+NanoClaw gives you the same core functionality in a codebase you can understand in 8 minutes. One process. A handful of files. Simple process-based isolation.
 
 ## Quick Start
 
@@ -20,13 +20,13 @@ cd nanoclaw
 claude
 ```
 
-Then run `/setup`. Claude Code handles everything: dependencies, authentication, container setup, service configuration.
+Then run `/setup`. Claude Code handles everything: dependencies, authentication, service configuration.
 
 ## Philosophy
 
 **Small enough to understand.** One process, a few source files. No microservices, no message queues, no abstraction layers. Have Claude Code walk you through it.
 
-**Secure by isolation.** Agents run in Linux containers (Apple Container). They can only see what's explicitly mounted. Bash access is safe because commands run inside the container, not on your Mac.
+**Secure by isolation.** Each agent runs in its own process with working directory set to its group folder. Simple filesystem-based isolation.
 
 **Built for one user.** This isn't a framework. It's working software that fits my exact needs. You fork it and have Claude Code make it match your exact needs.
 
@@ -43,11 +43,10 @@ Then run `/setup`. Claude Code handles everything: dependencies, authentication,
 ## What It Supports
 
 - **WhatsApp I/O** - Message Claude from your phone
-- **Isolated group context** - Each group has its own `CLAUDE.md` memory, isolated filesystem, and runs in its own container sandbox with only that filesystem mounted
+- **Isolated group context** - Each group has its own `CLAUDE.md` memory and isolated filesystem
 - **Main channel** - Your private channel (self-chat) for admin control; every other group is completely isolated
 - **Scheduled tasks** - Recurring jobs that run Claude and can message you back
 - **Web access** - Search and fetch content
-- **Container isolation** - Agents sandboxed in Apple containers
 - **Optional integrations** - Add Gmail (`/add-gmail`) and more via skills
 
 ## Usage
@@ -97,9 +96,6 @@ Skills we'd love to see:
 - `/add-slack` - Add Slack
 - `/add-discord` - Add Discord
 
-**Container Runtime**
-- `/convert-to-docker` - Replace Apple Container with Docker (unlocks Linux)
-
 **Platform Support**
 - `/setup-windows` - Windows via WSL2 + Docker
 
@@ -108,22 +104,21 @@ Skills we'd love to see:
 
 ## Requirements
 
-- macOS Tahoe (26) or later - runs great on Mac Mini
+- Linux or macOS
 - Node.js 20+
 - [Claude Code](https://claude.ai/download)
-- [Apple Container](https://github.com/apple/container)
 
 ## Architecture
 
 ```
-WhatsApp (baileys) --> SQLite --> Polling loop --> Container (Claude Agent SDK) --> Response
+WhatsApp (baileys) --> SQLite --> Polling loop --> Agent process (Anthropic API) --> Response
 ```
 
-Single Node.js process. Agents execute in isolated Linux containers with mounted directories. IPC via filesystem. No daemons, no queues, no complexity.
+Single Node.js process. Agents execute as child processes. IPC via filesystem. No daemons, no queues, no complexity.
 
 Key files:
 - `src/index.ts` - Main app: WhatsApp connection, routing, IPC
-- `src/container-runner.ts` - Spawns agent containers
+- `src/agent-runner.ts` - Spawns agent processes
 - `src/task-scheduler.ts` - Runs scheduled tasks
 - `src/db.ts` - SQLite operations
 - `groups/*/CLAUDE.md` - Per-group memory
@@ -134,17 +129,13 @@ Key files:
 
 Because I use WhatsApp. Fork it and run a skill to change it. That's the whole point.
 
-**Why Apple Container instead of Docker?**
-
-Lightweight, fast, and built into macOS. Requires macOS Tahoe and runs great on a Mac Mini. Contribute a skill to convert to Docker if you want Docker.
-
 **Can I run this on Linux?**
 
-Yes. Run Claude Code and say "make this run on Linux." ~30 min of back-and-forth and it'll work. When you're done, ask Claude to create a skill explaining how to make it work on Linux, then contribute the skill back to the project.
+Yes, it runs natively on Linux. No containers required.
 
 **Is this secure?**
 
-Agents run in containers, not behind application-level permission checks. They can only access explicitly mounted directories. You should still review what you're running, but the codebase is small enough that you actually can. See [docs/SECURITY.md](docs/SECURITY.md) for the full security model.
+Each agent runs as a separate process with its working directory set to its group folder. You should still review what you're running, but the codebase is small enough that you actually can. See [docs/SECURITY.md](docs/SECURITY.md) for the full security model.
 
 **Why no configuration files?**
 

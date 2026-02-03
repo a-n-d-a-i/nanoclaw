@@ -1,6 +1,6 @@
 /**
- * Container Runner for NanoClaw
- * Spawns agent execution in Apple Container and handles IPC
+ * Agent Runner for NanoClaw
+ * Spawns agent execution as a child process and handles IPC
  */
 
 import { spawn } from 'child_process';
@@ -9,8 +9,8 @@ import os from 'os';
 import path from 'path';
 import pino from 'pino';
 import {
-  CONTAINER_TIMEOUT,
-  CONTAINER_MAX_OUTPUT_SIZE,
+  AGENT_TIMEOUT,
+  AGENT_MAX_OUTPUT_SIZE,
   GROUPS_DIR,
   DATA_DIR
 } from './config.js';
@@ -22,7 +22,7 @@ const logger = pino({
   transport: { target: 'pino-pretty', options: { colorize: true } }
 });
 
-// Sentinel markers for robust output parsing (must match agent-runner)
+// Sentinel markers for robust output parsing (must match agent.ts)
 const OUTPUT_START_MARKER = '---NANOCLAW_OUTPUT_START---';
 const OUTPUT_END_MARKER = '---NANOCLAW_OUTPUT_END---';
 
@@ -34,7 +34,7 @@ function getHomeDir(): string {
   return home;
 }
 
-export interface ContainerInput {
+export interface AgentInput {
   prompt: string;
   sessionId?: string;
   groupFolder: string;
@@ -43,19 +43,20 @@ export interface ContainerInput {
   isScheduledTask?: boolean;
 }
 
-export interface ContainerOutput {
+export interface AgentOutput {
   status: 'success' | 'error';
   result: string | null;
   newSessionId?: string;
   error?: string;
 }
 
+const allowedVars = ['ANTHROPIC_API_KEY', 'CLAUDE_CODE_OAUTH_TOKEN'];
+
 function buildEnv(group: RegisteredGroup, isMain: boolean): NodeJS.ProcessEnv {
   const env = { ...process.env };
   const projectRoot = process.cwd();
 
   // Filter env for security - only allow specific vars
-  const allowedVars = ['ANTHROPIC_API_KEY', 'CLAUDE_CODE_OAUTH_TOKEN'];
   for (const key in env) {
     if (!allowedVars.includes(key) && !key.startsWith('NODE_') && !key.startsWith('npm_')) {
       delete env[key];
@@ -69,10 +70,10 @@ function buildEnv(group: RegisteredGroup, isMain: boolean): NodeJS.ProcessEnv {
   return env;
 }
 
-export async function runContainerAgent(
+export async function runAgent(
   group: RegisteredGroup,
-  input: ContainerInput
-): Promise<ContainerOutput> {
+  input: AgentInput
+): Promise<AgentOutput> {
   const startTime = Date.now();
 
   const groupDir = path.join(GROUPS_DIR, group.folder);
@@ -88,7 +89,7 @@ export async function runContainerAgent(
   logger.info({
     group: group.name,
     isMain: input.isMain
-  }, 'Spawning direct agent');
+  }, 'Spawning agent process');
 
   const logsDir = path.join(GROUPS_DIR, group.folder, 'logs');
   fs.mkdirSync(logsDir, { recursive: true });
@@ -117,7 +118,7 @@ export async function runContainerAgent(
     agent.stdout.on('data', (data) => {
       if (stdoutTruncated) return;
       const chunk = data.toString();
-      const remaining = CONTAINER_MAX_OUTPUT_SIZE - stdout.length;
+      const remaining = AGENT_MAX_OUTPUT_SIZE - stdout.length;
       if (chunk.length > remaining) {
         stdout += chunk.slice(0, remaining);
         stdoutTruncated = true;
@@ -134,7 +135,7 @@ export async function runContainerAgent(
         if (line) logger.debug({ agent: group.folder }, line);
       }
       if (stderrTruncated) return;
-      const remaining = CONTAINER_MAX_OUTPUT_SIZE - stderr.length;
+      const remaining = AGENT_MAX_OUTPUT_SIZE - stderr.length;
       if (chunk.length > remaining) {
         stderr += chunk.slice(0, remaining);
         stderrTruncated = true;
@@ -151,9 +152,9 @@ export async function runContainerAgent(
       resolve({
         status: 'error',
         result: null,
-        error: `Agent timed out after ${CONTAINER_TIMEOUT}ms`
+        error: `Agent timed out after ${AGENT_TIMEOUT}ms`
       });
-    }, group.containerConfig?.timeout || CONTAINER_TIMEOUT);
+    }, group.containerConfig?.timeout || AGENT_TIMEOUT);
 
     agent.on('close', (code) => {
       clearTimeout(timeout);
@@ -241,7 +242,7 @@ export async function runContainerAgent(
           jsonLine = lines[lines.length - 1];
         }
 
-        const output: ContainerOutput = JSON.parse(jsonLine);
+        const output: AgentOutput = JSON.parse(jsonLine);
 
         logger.info({
           group: group.name,

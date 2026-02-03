@@ -31,7 +31,8 @@ process.stdin.on('end', async () => {
       system: `You are ${isMain ? 'the main admin assistant' : 'a group assistant'}. Respond concisely. If scheduled, note it.`,
     });
 
-    const result = message.content[0].text;
+    const textBlock = message.content.find(block => block.type === 'text');
+    const result = textBlock && 'text' in textBlock ? textBlock.text : null;
 
     const output = {
       status: 'success',
