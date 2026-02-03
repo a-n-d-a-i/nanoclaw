@@ -4,7 +4,7 @@ import pino from 'pino';
 import { CronExpressionParser } from 'cron-parser';
 import { getDueTasks, updateTaskAfterRun, logTaskRun, getTaskById, getAllTasks } from './db.js';
 import { ScheduledTask, RegisteredGroup } from './types.js';
-import { GROUPS_DIR, SCHEDULER_POLL_INTERVAL, DATA_DIR, MAIN_GROUP_FOLDER, TIMEZONE } from './config.js';
+import { GROUPS_DIR, SCHEDULER_POLL_INTERVAL, TIMEZONE } from './config.js';
 import { runAgent, writeTasksSnapshot } from './agent-runner.js';
 
 const logger = pino({
@@ -41,10 +41,9 @@ async function runTask(task: ScheduledTask, deps: SchedulerDependencies): Promis
     return;
   }
 
-  // Update tasks snapshot for agent to read (filtered by group)
-  const isMain = task.group_folder === MAIN_GROUP_FOLDER;
+  // Write tasks snapshot for agent to read
   const tasks = getAllTasks();
-  writeTasksSnapshot(task.group_folder, isMain, tasks.map(t => ({
+  writeTasksSnapshot(task.group_folder, tasks.map(t => ({
     id: t.id,
     groupFolder: t.group_folder,
     prompt: t.prompt,
@@ -67,7 +66,6 @@ async function runTask(task: ScheduledTask, deps: SchedulerDependencies): Promis
       sessionId,
       groupFolder: task.group_folder,
       chatJid: task.chat_jid,
-      isMain,
       isScheduledTask: true
     });
 

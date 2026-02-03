@@ -20,7 +20,7 @@ import {
   TIMEZONE
 } from './config.js';
 import { RegisteredGroup, Session, NewMessage } from './types.js';
-import { initDatabase, storeMessage, storeChatMetadata, getNewMessages, getMessagesSince, getAllTasks, getTaskById, updateChatName, getAllChats, getLastGroupSync, setLastGroupSync } from './db.js';
+import { initDatabase, storeMessage, storeChatMetadata, getNewMessages, getMessagesSince, getAllTasks, updateChatName, getAllChats, getLastGroupSync, setLastGroupSync } from './db.js';
 import { startSchedulerLoop } from './task-scheduler.js';
 import { runAgent, writeTasksSnapshot, writeGroupsSnapshot, AvailableGroup } from './agent-runner.js';
 import { loadJson, saveJson } from './utils.js';
@@ -75,10 +75,8 @@ function registerGroup(jid: string, group: RegisteredGroup): void {
 /**
  * Sync group metadata from WhatsApp.
  * Fetches all participating groups and stores their names in the database.
- * Called on startup, daily, and on-demand via IPC.
  */
 async function syncGroupMetadata(force = false): Promise<void> {
-  // Check if we need to sync (skip if synced recently, unless forced)
   if (!force) {
     const lastSync = getLastGroupSync();
     if (lastSync) {
@@ -112,7 +110,6 @@ async function syncGroupMetadata(force = false): Promise<void> {
 
 /**
  * Get available groups list for the agent.
- * Returns groups ordered by most recent activity.
  */
 function getAvailableGroups(): AvailableGroup[] {
   const chats = getAllChats();
@@ -138,12 +135,11 @@ async function processMessage(msg: NewMessage): Promise<void> {
   // Main group responds to all messages; other groups require trigger prefix
   if (!isMainGroup && !TRIGGER_PATTERN.test(content)) return;
 
-  // Get all messages since last agent interaction so the session has full context
+  // Get all messages since last agent interaction
   const sinceTimestamp = lastAgentTimestamp[msg.chat_jid] || '';
   const missedMessages = getMessagesSince(msg.chat_jid, sinceTimestamp, ASSISTANT_NAME);
 
   const lines = missedMessages.map(m => {
-    // Escape XML special characters in content
     const escapeXml = (s: string) => s
       .replace(/&/g, '&amp;')
       .replace(/</g, '&lt;')
@@ -168,12 +164,11 @@ async function processMessage(msg: NewMessage): Promise<void> {
 }
 
 async function invokeAgent(group: RegisteredGroup, prompt: string, chatJid: string): Promise<string | null> {
-  const isMain = group.folder === MAIN_GROUP_FOLDER;
   const sessionId = sessions[group.folder];
 
-  // Update tasks snapshot for agent to read (filtered by group)
+  // Write snapshots for agent to read
   const tasks = getAllTasks();
-  writeTasksSnapshot(group.folder, isMain, tasks.map(t => ({
+  writeTasksSnapshot(group.folder, tasks.map(t => ({
     id: t.id,
     groupFolder: t.group_folder,
     prompt: t.prompt,
@@ -183,17 +178,15 @@ async function invokeAgent(group: RegisteredGroup, prompt: string, chatJid: stri
     next_run: t.next_run
   })));
 
-  // Update available groups snapshot (main group only can see all groups)
   const availableGroups = getAvailableGroups();
-  writeGroupsSnapshot(group.folder, isMain, availableGroups, new Set(Object.keys(registeredGroups)));
+  writeGroupsSnapshot(group.folder, availableGroups);
 
   try {
     const output = await runAgent(group, {
       prompt,
       sessionId,
       groupFolder: group.folder,
-      chatJid,
-      isMain
+      chatJid
     });
 
     if (output.newSessionId) {
@@ -227,7 +220,6 @@ function startIpcWatcher(): void {
   fs.mkdirSync(ipcBaseDir, { recursive: true });
 
   const processIpcFiles = async () => {
-    // Scan all group IPC directories (identity determined by directory)
     let groupFolders: string[];
     try {
       groupFolders = fs.readdirSync(ipcBaseDir).filter(f => {
@@ -241,11 +233,10 @@ function startIpcWatcher(): void {
     }
 
     for (const sourceGroup of groupFolders) {
-      const isMain = sourceGroup === MAIN_GROUP_FOLDER;
       const messagesDir = path.join(ipcBaseDir, sourceGroup, 'messages');
       const tasksDir = path.join(ipcBaseDir, sourceGroup, 'tasks');
 
-      // Process messages from this group's IPC directory
+      // Process messages
       try {
         if (fs.existsSync(messagesDir)) {
           const messageFiles = fs.readdirSync(messagesDir).filter(f => f.endsWith('.json'));
@@ -254,14 +245,8 @@ function startIpcWatcher(): void {
             try {
               const data = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
               if (data.type === 'message' && data.chatJid && data.text) {
-                // Authorization: verify this group can send to this chatJid
-                const targetGroup = registeredGroups[data.chatJid];
-                if (isMain || (targetGroup && targetGroup.folder === sourceGroup)) {
-                  await sendMessage(data.chatJid, `${ASSISTANT_NAME}: ${data.text}`);
-                  logger.info({ chatJid: data.chatJid, sourceGroup }, 'IPC message sent');
-                } else {
-                  logger.warn({ chatJid: data.chatJid, sourceGroup }, 'Unauthorized IPC message attempt blocked');
-                }
+                await sendMessage(data.chatJid, `${ASSISTANT_NAME}: ${data.text}`);
+                logger.info({ chatJid: data.chatJid, sourceGroup }, 'IPC message sent');
               }
               fs.unlinkSync(filePath);
             } catch (err) {
@@ -276,7 +261,7 @@ function startIpcWatcher(): void {
         logger.error({ err, sourceGroup }, 'Error reading IPC messages directory');
       }
 
-      // Process tasks from this group's IPC directory
+      // Process tasks
       try {
         if (fs.existsSync(tasksDir)) {
           const taskFiles = fs.readdirSync(tasksDir).filter(f => f.endsWith('.json'));
@@ -284,8 +269,7 @@ function startIpcWatcher(): void {
             const filePath = path.join(tasksDir, file);
             try {
               const data = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
-              // Pass source group identity to processTaskIpc for authorization
-              await processTaskIpc(data, sourceGroup, isMain);
+              await processTaskIpc(data);
               fs.unlinkSync(filePath);
             } catch (err) {
               logger.error({ file, sourceGroup, err }, 'Error processing IPC task');
@@ -304,7 +288,7 @@ function startIpcWatcher(): void {
   };
 
   processIpcFiles();
-  logger.info('IPC watcher started (per-group namespaces)');
+  logger.info('IPC watcher started');
 }
 
 async function processTaskIpc(
@@ -317,31 +301,21 @@ async function processTaskIpc(
     context_mode?: string;
     groupFolder?: string;
     chatJid?: string;
-    // For register_group
     jid?: string;
     name?: string;
     folder?: string;
     trigger?: string;
     agentConfig?: RegisteredGroup['agentConfig'];
-  },
-  sourceGroup: string,  // Verified identity from IPC directory
-  isMain: boolean       // Verified from directory path
+  }
 ): Promise<void> {
-  // Import db functions dynamically to avoid circular deps
   const { createTask, updateTask, deleteTask, getTaskById: getTask } = await import('./db.js');
   const { CronExpressionParser } = await import('cron-parser');
 
   switch (data.type) {
     case 'schedule_task':
       if (data.prompt && data.schedule_type && data.schedule_value && data.groupFolder) {
-        // Authorization: non-main groups can only schedule for themselves
         const targetGroup = data.groupFolder;
-        if (!isMain && targetGroup !== sourceGroup) {
-          logger.warn({ sourceGroup, targetGroup }, 'Unauthorized schedule_task attempt blocked');
-          break;
-        }
 
-        // Resolve the correct JID for the target group (don't trust IPC payload)
         const targetJid = Object.entries(registeredGroups).find(
           ([, group]) => group.folder === targetGroup
         )?.[0];
@@ -394,18 +368,16 @@ async function processTaskIpc(
           status: 'active',
           created_at: new Date().toISOString()
         });
-        logger.info({ taskId, sourceGroup, targetGroup, contextMode }, 'Task created via IPC');
+        logger.info({ taskId, targetGroup, contextMode }, 'Task created via IPC');
       }
       break;
 
     case 'pause_task':
       if (data.taskId) {
         const task = getTask(data.taskId);
-        if (task && (isMain || task.group_folder === sourceGroup)) {
+        if (task) {
           updateTask(data.taskId, { status: 'paused' });
-          logger.info({ taskId: data.taskId, sourceGroup }, 'Task paused via IPC');
-        } else {
-          logger.warn({ taskId: data.taskId, sourceGroup }, 'Unauthorized task pause attempt');
+          logger.info({ taskId: data.taskId }, 'Task paused via IPC');
         }
       }
       break;
@@ -413,11 +385,9 @@ async function processTaskIpc(
     case 'resume_task':
       if (data.taskId) {
         const task = getTask(data.taskId);
-        if (task && (isMain || task.group_folder === sourceGroup)) {
+        if (task) {
           updateTask(data.taskId, { status: 'active' });
-          logger.info({ taskId: data.taskId, sourceGroup }, 'Task resumed via IPC');
-        } else {
-          logger.warn({ taskId: data.taskId, sourceGroup }, 'Unauthorized task resume attempt');
+          logger.info({ taskId: data.taskId }, 'Task resumed via IPC');
         }
       }
       break;
@@ -425,35 +395,19 @@ async function processTaskIpc(
     case 'cancel_task':
       if (data.taskId) {
         const task = getTask(data.taskId);
-        if (task && (isMain || task.group_folder === sourceGroup)) {
+        if (task) {
           deleteTask(data.taskId);
-          logger.info({ taskId: data.taskId, sourceGroup }, 'Task cancelled via IPC');
-        } else {
-          logger.warn({ taskId: data.taskId, sourceGroup }, 'Unauthorized task cancel attempt');
+          logger.info({ taskId: data.taskId }, 'Task cancelled via IPC');
         }
       }
       break;
 
     case 'refresh_groups':
-      // Only main group can request a refresh
-      if (isMain) {
-        logger.info({ sourceGroup }, 'Group metadata refresh requested via IPC');
-        await syncGroupMetadata(true);
-        // Write updated snapshot immediately
-        const availableGroups = getAvailableGroups();
-        const { writeGroupsSnapshot: writeGroups } = await import('./agent-runner.js');
-        writeGroups(sourceGroup, true, availableGroups, new Set(Object.keys(registeredGroups)));
-      } else {
-        logger.warn({ sourceGroup }, 'Unauthorized refresh_groups attempt blocked');
-      }
+      logger.info('Group metadata refresh requested via IPC');
+      await syncGroupMetadata(true);
       break;
 
     case 'register_group':
-      // Only main group can register new groups
-      if (!isMain) {
-        logger.warn({ sourceGroup }, 'Unauthorized register_group attempt blocked');
-        break;
-      }
       if (data.jid && data.name && data.folder && data.trigger) {
         registerGroup(data.jid, {
           name: data.name,
@@ -509,9 +463,7 @@ async function connectWhatsApp(): Promise<void> {
       }
     } else if (connection === 'open') {
       logger.info('Connected to WhatsApp');
-      // Sync group metadata on startup (respects 24h cache)
       syncGroupMetadata().catch(err => logger.error({ err }, 'Initial group sync failed'));
-      // Set up daily sync timer
       setInterval(() => {
         syncGroupMetadata().catch(err => logger.error({ err }, 'Periodic group sync failed'));
       }, GROUP_SYNC_INTERVAL_MS);
@@ -535,10 +487,8 @@ async function connectWhatsApp(): Promise<void> {
 
       const timestamp = new Date(Number(msg.messageTimestamp) * 1000).toISOString();
 
-      // Always store chat metadata for group discovery
       storeChatMetadata(chatJid, timestamp);
 
-      // Only store full message content for registered groups
       if (registeredGroups[chatJid]) {
         storeMessage(msg, chatJid, msg.key.fromMe || false, msg.pushName || undefined);
       }
@@ -558,12 +508,10 @@ async function startMessageLoop(): Promise<void> {
       for (const msg of messages) {
         try {
           await processMessage(msg);
-          // Only advance timestamp after successful processing for at-least-once delivery
           lastTimestamp = msg.timestamp;
           saveState();
         } catch (err) {
           logger.error({ err, msg: msg.id }, 'Error processing message, will retry');
-          // Stop processing this batch - failed message will be retried next loop
           break;
         }
       }

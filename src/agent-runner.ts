@@ -29,7 +29,6 @@ export interface AgentInput {
   sessionId?: string;
   groupFolder: string;
   chatJid: string;
-  isMain: boolean;
   isScheduledTask?: boolean;
 }
 
@@ -42,7 +41,7 @@ export interface AgentOutput {
 
 const allowedVars = ['ANTHROPIC_API_KEY', 'CLAUDE_CODE_OAUTH_TOKEN'];
 
-function buildEnv(group: RegisteredGroup, isMain: boolean): NodeJS.ProcessEnv {
+function buildEnv(group: RegisteredGroup): NodeJS.ProcessEnv {
   const env = { ...process.env };
 
   // Only pass through API credentials and Node vars
@@ -53,7 +52,6 @@ function buildEnv(group: RegisteredGroup, isMain: boolean): NodeJS.ProcessEnv {
   }
 
   env.GROUP_FOLDER = group.folder;
-  env.IS_MAIN = isMain.toString();
 
   return env;
 }
@@ -67,17 +65,14 @@ export async function runAgent(
   const groupDir = path.join(GROUPS_DIR, group.folder);
   fs.mkdirSync(groupDir, { recursive: true });
 
-  const env = buildEnv(group, input.isMain);
+  const env = buildEnv(group);
 
   logger.debug({
     group: group.name,
     envKeys: Object.keys(env).filter(k => allowedVars.includes(k)),
   }, 'Agent env configuration');
 
-  logger.info({
-    group: group.name,
-    isMain: input.isMain
-  }, 'Spawning agent process');
+  logger.info({ group: group.name }, 'Spawning agent process');
 
   const logsDir = path.join(GROUPS_DIR, group.folder, 'logs');
   fs.mkdirSync(logsDir, { recursive: true });
@@ -157,7 +152,6 @@ export async function runAgent(
         `=== Agent Run Log ===`,
         `Timestamp: ${new Date().toISOString()}`,
         `Group: ${group.name}`,
-        `IsMain: ${input.isMain}`,
         `Duration: ${duration}ms`,
         `Exit Code: ${code}`,
         `Stdout Truncated: ${stdoutTruncated}`,
@@ -270,7 +264,6 @@ export async function runAgent(
 
 export function writeTasksSnapshot(
   groupFolder: string,
-  isMain: boolean,
   tasks: Array<{
     id: string;
     groupFolder: string;
@@ -281,17 +274,11 @@ export function writeTasksSnapshot(
     next_run: string | null;
   }>
 ): void {
-  // Write filtered tasks to the group's IPC directory
   const groupIpcDir = path.join(DATA_DIR, 'ipc', groupFolder);
   fs.mkdirSync(groupIpcDir, { recursive: true });
 
-  // Main sees all tasks, others only see their own
-  const filteredTasks = isMain
-    ? tasks
-    : tasks.filter(t => t.groupFolder === groupFolder);
-
   const tasksFile = path.join(groupIpcDir, 'current_tasks.json');
-  fs.writeFileSync(tasksFile, JSON.stringify(filteredTasks, null, 2));
+  fs.writeFileSync(tasksFile, JSON.stringify(tasks, null, 2));
 }
 
 export interface AvailableGroup {
@@ -301,26 +288,16 @@ export interface AvailableGroup {
   isRegistered: boolean;
 }
 
-/**
- * Write available groups snapshot for the agent to read.
- * Only main group can see all available groups (for activation).
- * Non-main groups only see their own registration status.
- */
 export function writeGroupsSnapshot(
   groupFolder: string,
-  isMain: boolean,
-  groups: AvailableGroup[],
-  registeredJids: Set<string>
+  groups: AvailableGroup[]
 ): void {
   const groupIpcDir = path.join(DATA_DIR, 'ipc', groupFolder);
   fs.mkdirSync(groupIpcDir, { recursive: true });
 
-  // Main sees all groups; others see nothing (they can't activate groups)
-  const visibleGroups = isMain ? groups : [];
-
   const groupsFile = path.join(groupIpcDir, 'available_groups.json');
   fs.writeFileSync(groupsFile, JSON.stringify({
-    groups: visibleGroups,
+    groups,
     lastSync: new Date().toISOString()
   }, null, 2));
 }

@@ -1,5 +1,4 @@
 import { Anthropic } from '@anthropic-ai/sdk';
-import fs from 'fs';
 import path from 'path';
 
 const OUTPUT_START_MARKER = '---NANOCLAW_OUTPUT_START---';
@@ -17,10 +16,10 @@ process.stdin.on('data', (chunk) => {
 process.stdin.on('end', async () => {
   try {
     const input = JSON.parse(inputData);
-    const { prompt, sessionId, groupFolder, chatJid, isMain, isScheduledTask } = input;
+    const { prompt, sessionId, groupFolder } = input;
 
     // Set cwd to group folder
-    const groupDir = path.resolve(process.cwd(), '..', 'groups', groupFolder); // Adjust path as needed
+    const groupDir = path.resolve(process.cwd(), '..', 'groups', groupFolder);
     process.chdir(groupDir);
 
     // Simple Claude call - expand for full Agent SDK if needed
@@ -28,7 +27,7 @@ process.stdin.on('end', async () => {
       model: 'claude-3-5-sonnet-20241022',
       max_tokens: 1024,
       messages: [{ role: 'user', content: prompt }],
-      system: `You are ${isMain ? 'the main admin assistant' : 'a group assistant'}. Respond concisely. If scheduled, note it.`,
+      system: 'You are a personal assistant. Respond concisely.',
     });
 
     const textBlock = message.content.find(block => block.type === 'text');
